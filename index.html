@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cosechador eólico — prototipo interactivo</title>
+<!--
+  =====================================================================
+  COSECHADOR EÓLICO — PROTOTIPO INTERACTIVO 3D (diseño reciclado)
+  Un solo archivo: HTML + CSS + JavaScript. Sin bibliotecas, sin CDN.
+  El 3D se dibuja con un motor propio sobre <canvas> (sección 4).
+  Secciones del script:
+    1. PIEZAS (textos de cada componente)
+    2. ESTADO y CÁMARA
+    3. MOTOR 3D (proyección, primitivas, sombreado)
+    4. MODELO (geometría del prototipo, en decímetros)
+    5. DIBUJO (render, etiquetas, selección)
+    6. INTERACCIÓN (ratón, táctil, botones)
+    7. BUCLE de animación
+  =====================================================================
+-->
+<style>
+:root{
+  --fondo:#F3F4F0; --hoja:#FFFFFF; --tinta:#1D2A23; --tinta2:#5B6760;
+  --linea:#DDE3DC; --verde:#24543D; --verdeSuave:#E3EDE5; --verdeBorde:#BFD3C4;
+  --acento:#2FA36B;
+  --fuente:"Segoe UI Variable","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fondo);color:var(--tinta);font-family:var(--fuente);font-size:14px;line-height:1.45}
+button{font:inherit;cursor:pointer}
+.app{max-width:1260px;margin:0 auto;padding:16px 20px 28px}
+
+/* --- Cabecera --- */
+.top{display:flex;align-items:center;gap:14px;padding:4px 0 16px;border-bottom:1px solid var(--linea);margin-bottom:20px}
+.logo{width:44px;height:44px;border-radius:9px;background:var(--verde);display:grid;place-items:center;flex:0 0 auto}
+.kicker{margin:0;font-size:11px;letter-spacing:.14em;font-weight:700;color:var(--tinta2)}
+.top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em}
+.top .spacer{flex:1}
+.btn{border:1px solid var(--linea);background:var(--hoja);border-radius:8px;padding:9px 14px;color:var(--tinta)}
+.btn:hover{border-color:#9FB3A6}
+.btn[aria-pressed="true"]{background:var(--verde);border-color:var(--verde);color:#fff}
+
+/* --- Escenario --- */
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:18px;align-items:start}
+@media (max-width:900px){.stage{grid-template-columns:1fr}}
+.viewer{background:var(--hoja);border:1px solid var(--linea);border-radius:12px;overflow:hidden}
+.viewer-top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;font-size:12.5px;color:var(--tinta2);pointer-events:none}
+.viewer-top b{font-weight:500;color:var(--tinta);font-size:13px}
+.tag{display:inline-block;margin-left:6px;border:1px solid #B9C4BC;border-radius:4px;padding:0 5px;font-size:11px;font-weight:700;color:var(--tinta)}
+.canvas-wrap{position:relative;background:linear-gradient(180deg,#E6EDE5 0%,#E6EDE5 15%,#F4F6F2 15.2%,#F4F6F2 100%)}
+canvas{display:block;width:100%;height:540px;touch-action:none;cursor:grab}
+canvas.drag{cursor:grabbing} canvas.hover{cursor:pointer}
+@media (max-width:640px){canvas{height:380px}}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-top:1px solid var(--linea)}
+.bar .spacer{flex:1}
+.views{display:flex;flex-wrap:wrap;gap:2px}
+.views button{border:none;background:transparent;border-radius:7px;padding:8px 14px;color:var(--tinta)}
+.views button:hover{background:var(--verdeSuave)}
+.views button[aria-pressed="true"]{background:var(--verde);color:#fff}
+.check{display:inline-flex;align-items:center;gap:7px;margin-left:6px}
+.check input{width:16px;height:16px;accent-color:var(--verde)}
+.zoom{width:32px;height:32px;padding:0;border:1px solid var(--linea);background:var(--hoja);border-radius:7px}
+.estado{padding:0 14px 10px;font-size:12.5px;color:var(--tinta2);min-height:22px}
+
+/* --- Panel lateral --- */
+aside .kicker{margin-bottom:6px}
+aside h2{margin:0 0 6px;font-size:19px;font-weight:700}
+aside > p{margin:0 0 14px;color:var(--tinta2);font-size:13px}
+.lista{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.lista button{width:100%;display:flex;align-items:center;gap:10px;text-align:left;background:transparent;border:1px solid transparent;border-radius:7px;padding:7px 8px;color:var(--tinta)}
+.lista button:hover{background:#EBF0EA}
+.lista button[aria-pressed="true"]{background:var(--verdeSuave);border-color:var(--verdeBorde)}
+.lista .n{flex:0 0 24px;height:22px;border-radius:4px;display:grid;place-items:center;font-size:11px;font-weight:700;background:#E4E9E3;color:var(--tinta2)}
+.lista button[aria-pressed="true"] .n{background:var(--verde);color:#fff}
+.lista .rec{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--acento)}
+.ficha{margin-top:16px;padding:14px;border-radius:8px;background:#ECF2EC;border-top:1px solid var(--verdeBorde)}
+.ficha .kicker{font-size:10.5px;color:#6E8A78}
+.ficha h3{margin:4px 0 6px;font-size:16px}
+.ficha p{margin:0 0 8px;font-size:13px}
+.ficha dl{margin:8px 0 0;display:grid;gap:6px}
+.ficha dt{font-size:11.5px;color:var(--tinta2);font-weight:600}
+.ficha dd{margin:0;font-size:12.5px}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;margin-right:4px}
+.chip.rec{background:#D4EDDD;color:#1F6B45}
+.chip.nuevo{background:#E9ECE7;color:#4E5D55}
+.chip.mec{background:#DCEBEF;color:#235E73}
+.chip.ele{background:#F6EAD0;color:#7E5A12}
+.nota{margin-top:14px;font-size:11.5px;color:var(--tinta2)}
+.leyenda{margin-top:8px;font-size:11.5px;color:var(--tinta2);display:flex;align-items:center;gap:6px}
+.leyenda i{width:8px;height:8px;border-radius:50%;background:var(--acento);display:inline-block}
+.pie{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px;font-size:12px;color:var(--tinta2)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ============ CABECERA ============ -->
+<header class="top">
+  <div class="logo" aria-hidden="true">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#DCEFE3" stroke-width="1.8" stroke-linecap="round">
+      <path d="M13 2v22M2 13h22M5.2 5.2l15.6 15.6M20.8 5.2L5.2 20.8"/>
+    </svg>
+  </div>
+  <div>
+    <p class="kicker">PROTOTIPO INTERACTIVO</p>
+    <h1>Cosechador eólico</h1>
+  </div>
+  <span class="spacer"></span>
+  <button class="btn" id="btnAnimTop" type="button" aria-pressed="false">Ver la energía fluir</button>
+</header>
+
+<div class="stage">
+  <!-- ============ VISOR 3D ============ -->
+  <section class="viewer" aria-label="Modelo 3D del prototipo">
+    <div class="canvas-wrap">
+      <div class="viewer-top">
+        <span><b>Modelo 3D</b><span class="tag">360°</span></span>
+        <span>Arrastra para girar · Usa la rueda para acercar</span>
+      </div>
+      <canvas id="cv" tabindex="0" aria-label="Modelo 3D del cosechador. Flechas para girar, más y menos para acercar."></canvas>
+    </div>
+    <div class="bar">
+      <div class="views" role="group" aria-label="Vistas">
+        <button type="button" data-view="persp" aria-pressed="true">Perspectiva</button>
+        <button type="button" data-view="front" aria-pressed="false">Frontal</button>
+        <button type="button" data-view="side" aria-pressed="false">Lateral</button>
+        <button type="button" data-view="top" aria-pressed="false">Superior</button>
+        <button type="button" data-view="back" aria-pressed="false">Posterior</button>
+      </div>
+      <span class="spacer"></span>
+      <button class="btn" type="button" id="btnReset">Restablecer</button>
+    </div>
+    <div class="bar">
+      <button class="btn" type="button" id="btnSpin" aria-pressed="false">↻ Giro 360°</button>
+      <button class="btn" type="button" id="btnAnim" aria-pressed="false">▷ Animar rotor</button>
+      <label class="check"><input type="checkbox" id="chkLabels" checked> Componentes</label>
+      <span class="spacer"></span>
+      <button class="zoom" type="button" id="btnOut" aria-label="Alejar">−</button>
+      <button class="zoom" type="button" id="btnIn" aria-label="Acercar">+</button>
+    </div>
+    <div class="estado" id="estado">Animación detenida. Pulsa «Animar rotor» para ver el viento, el giro y la energía.</div>
+  </section>
+
+  <!-- ============ PANEL DE PIEZAS ============ -->
+  <aside aria-label="Piezas">
+    <p class="kicker">EXPLORA EL PROTOTIPO</p>
+    <h2>Del viento a la energía</h2>
+    <p>Selecciona una pieza para identificarla en el modelo.</p>
+    <ol class="lista" id="lista"></ol>
+    <p class="leyenda"><i></i> hecha con material reciclado</p>
+    <div class="ficha" id="ficha" aria-live="polite"></div>
+    <p class="nota">Reconstrucción visual del diseño reciclado para Turbo, Antioquia. Proporciones aproximadas a escala de mesa; el prototipo real va sobre una torre de 6 m o más. La animación es ilustrativa.</p>
+  </aside>
+</div>
+
+<div class="pie">
+  <span>Tres palas de PVC · Eje horizontal · Generador axial reciclado</span>
+  <span>En celular: gira con un dedo y amplía con dos.</span>
+</div>
+</div>
+
+<script>
+/* =====================================================================
+   1. PIEZAS — en el orden en que pasa la energía
+   ===================================================================== */
+const PIEZAS = [null,
+  { nombre:"Rotor de palas de PVC", tipo:"mec", rec:true,
+    corto:"Tres palas curvas cortadas de un tubo de PVC sanitario de 8 pulgadas, lijadas y pintadas. Captan la energía del viento.",
+    material:"Tubo de PVC sobrante de obra; buje de lámina de acero reutilizada.",
+    recibe:"Viento de 1 a 3 m/s, el típico de Turbo.",
+    entrega:"Giro con fuerza (par) al eje." },
+  { nombre:"Eje y rodamientos", tipo:"mec", rec:true,
+    corto:"Eje con rodamientos de bolas sellados, sacado del buje de una rueda. Une el rotor con el generador sin poleas ni correa.",
+    material:"Buje de rueda de bicicleta o carro de chatarrería.",
+    recibe:"El giro del rotor.",
+    entrega:"El mismo giro al generador, casi sin pérdidas." },
+  { nombre:"Generador axial artesanal", tipo:"ele", rec:true,
+    corto:"Dos discos de freno con imanes giran a lado y lado de un disco de bobinas en resina. Sin hierro ni escobillas: arranca con poco viento.",
+    material:"Discos de freno reciclados y cobre de transformadores viejos. Los imanes de neodimio se compran nuevos.",
+    recibe:"El giro del eje.",
+    entrega:"Corriente alterna en tres fases." },
+  { nombre:"Rectificador activo", tipo:"ele", rec:false,
+    corto:"Seis MOSFET con controladores de diodo ideal convierten las tres fases en corriente continua, perdiendo unos 0,04 V en vez de 1,4 V.",
+    material:"Placa nueva. Los MOSFET y disipadores pueden salir de fuentes de PC viejas.",
+    recibe:"Corriente alterna trifásica.",
+    entrega:"Corriente continua." },
+  { nombre:"Supercondensador", tipo:"ele", rec:false,
+    corto:"Reserva de 10 F y 5,5 V. Acumula en segundos la energía de las rachas cortas de Urabá.",
+    material:"Se compra nuevo.",
+    recibe:"Corriente continua que llega a golpes.",
+    entrega:"Una reserva estable para el cargador." },
+  { nombre:"Cargador con MPPT", tipo:"ele", rec:false,
+    corto:"Cosechador tipo bq25570 que arranca casi con nada, y cargador de potencia cuando hay más de 5 V. Busca siempre el punto de máxima potencia.",
+    material:"Placas nuevas; cables de extensiones viejas.",
+    recibe:"La energía del supercondensador.",
+    entrega:"Carga controlada a la batería." },
+  { nombre:"Batería de celdas 18650", tipo:"ele", rec:true,
+    corto:"Tres celdas recuperadas de baterías de portátil, en paralelo, con placa de protección. Guardan la energía.",
+    material:"Celdas de portátiles viejos, probadas una a una (1500 mAh o más, sin hinchar).",
+    recibe:"La carga del cargador.",
+    entrega:"3,7 V nominales para alimentar un dispositivo." },
+  { nombre:"Base y soportes", tipo:"mec", rec:true,
+    corto:"Tabla de estiba y soportes de ángulo metálico que sostienen el eje alineado. En el montaje real esto es la torre con veleta.",
+    material:"Madera de estiba y ángulo de estantería metálica reutilizados.",
+    recibe:"El peso y el empuje del rotor.",
+    entrega:"Soporte firme y alineado." }
+];
+const TIPO = { mec:"Movimiento mecánico", ele:"Energía eléctrica" };
+
+/* =====================================================================
+   2. ESTADO y CÁMARA
+   ===================================================================== */
+const S = { sel:1, anim:false, spin:false, labels:true, theta:0, reloj:0 };
+const VISTAS = {
+  persp:{ yaw:-0.62, pitch:0.34, dist:13.2 },
+  front:{ yaw:-Math.PI/2, pitch:0.12, dist:13 },
+  side: { yaw:0, pitch:0.1, dist:12.5 },
+  top:  { yaw:0, pitch:1.45, dist:14 },
+  back: { yaw:Math.PI/2, pitch:0.15, dist:13 }
+};
+const OBJ = { tx:0.5, ty:1.5, tz:0 };
+const cam = Object.assign({}, VISTAS.persp, OBJ);
+let anim = null;  // transición entre vistas
+
+/* =====================================================================
+   3. MOTOR 3D (canvas 2D, perspectiva, algoritmo del pintor)
+   ===================================================================== */
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let W = 800, H = 540, DPR = 1, F = 800;
+const LUZ = norm([-0.35, 0.9, 0.45]);
+function norm(v){ const l = Math.hypot(...v) || 1; return [v[0]/l, v[1]/l, v[2]/l]; }
+function hex(h){ const n = parseInt(h.slice(1), 16); return [(n>>16)&255, (n>>8)&255, n&255]; }
+function resta(a,b){ return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function cruz(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function punto(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function lim(x,a,b){ return Math.max(a, Math.min(b, x)); }
+function camPos(){
+  const cp = Math.cos(cam.pitch);
+  return [cam.tx + cam.dist*cp*Math.sin(cam.yaw), cam.ty + cam.dist*Math.sin(cam.pitch), cam.tz + cam.dist*cp*Math.cos(cam.yaw)];
+}
+function proyectar(p){
+  const dx = p[0]-cam.tx, dy = p[1]-cam.ty, dz = p[2]-cam.tz;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const x1 = dx*cy - dz*sy, z1 = dx*sy + dz*cy;
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const y2 = dy*cp - z1*sp, z2 = dy*sp + z1*cp;
+  const prof = cam.dist - z2, s = F / Math.max(prof, 0.3);
+  return [W/2 + x1*s, H*0.56 - y2*s, prof];
+}
+// primitivas: cada cara lleva color, id de pieza (0 = decorado) y capa
+function cara(L, pts, col, id, capa, opc){ L.push(Object.assign({ pts, col: typeof col === "string" ? hex(col) : col, id, capa }, opc)); }
+function caja(L, x0,y0,z0, x1,y1,z1, col, id, capa = 1, opc){
+  const v = [[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+  for (const f of [[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]]) cara(L, f.map(i => v[i]), col, id, capa, opc);
+}
+function cilX(L, x0,x1, cy,cz, r, n, col, id, capa = 1, tapas = true){
+  const a = [], b = [];
+  for (let i = 0; i < n; i++){ const t = i/n*Math.PI*2; a.push([x0, cy+r*Math.cos(t), cz+r*Math.sin(t)]); b.push([x1, cy+r*Math.cos(t), cz+r*Math.sin(t)]); }
+  for (let i = 0; i < n; i++){ const j = (i+1)%n; cara(L, [a[i],a[j],b[j],b[i]], col, id, capa); }
+  if (tapas){ cara(L, a.slice().reverse(), col, id, capa); cara(L, b, col, id, capa); }
+}
+function cilY(L, cx,cz, r, y0,y1, n, col, id, capa = 1){
+  const a = [], b = [];
+  for (let i = 0; i < n; i++){ const t = i/n*Math.PI*2; a.push([cx+r*Math.cos(t), y0, cz+r*Math.sin(t)]); b.push([cx+r*Math.cos(t), y1, cz+r*Math.sin(t)]); }
+  for (let i = 0; i < n; i++){ const j = (i+1)%n; cara(L, [a[i],a[j],b[j],b[i]], col, id, capa); }
+  cara(L, a, col, id, capa); cara(L, b.slice().reverse(), col, id, capa);
+}
+function linea(L, pts, color, w, capa = 1){ L.push({ linea:true, pts, color, w, capa, id:0 }); }
+function sombra(L, x0,z0, x1,z1, a = 0.10){ cara(L, [[x0,0.005,z0],[x1,0.005,z0],[x1,0.005,z1],[x0,0.005,z1]], [30,40,30], 0, 0.5, { alfa:a, plano:true }); }
+
+/* =====================================================================
+   4. MODELO del prototipo (unidades: decímetros; x = sentido del viento)
+   ===================================================================== */
+const EJE_Y = 2.7, ROTOR_X = -3.2, R_PALA = 2.05;
+const GEN_X = 0.0;
+const FASES = ["#D9822B", "#3E9A7A", "#3E7FC4"];
+function rutas(){
+  const g = [GEN_X+0.05, EJE_Y-0.62, 0.15];
+  const fases = [0,1,2].map(k => {
+    const dz = (k-1)*0.06;
+    return [[g[0], g[1], g[2]+dz], [0.6, 1.0, 0.45+dz], [1.0, 0.12, 0.7+dz], [1.55, 0.12, 0.35+dz]];
+  });
+  const dc = [
+    [[2.25,0.14,0.0],[2.7,0.14,0.0]],   // rectificador → supercondensador
+    [[3.2,0.14,0.0],[3.6,0.14,0.0]],    // supercondensador → cargador
+    [[4.35,0.14,0.0],[4.7,0.14,0.0]]    // cargador → batería
+  ];
+  return { fases, dc };
+}
+let ESTATICO = [];
+function construirEstatico(){
+  const L = [];
+  // mesa (decorado, capa 0)
+  caja(L, -5.6,-0.3,-2.6, 6.8,0,2.8, "#E8D3AE", 0, 0);
+  // 8 base: tabla de estiba y soportes
+  caja(L, -3.0,0,-0.9, 0.9,0.12,0.9, "#B9894F", 8, 0.8);
+  for (const z of [-0.55, 0.55]) caja(L, -3.0,0.12,z-0.04, 0.9,0.125,z+0.04, "#9C7240", 8, 0.8);
+  for (const x of [-2.1, -0.9]){
+    sombra(L, x-0.35,-0.45, x+0.45,0.5);
+    caja(L, x-0.18,0.12,-0.3, x+0.18,0.16,0.3, "#A9B1AD", 8);
+    caja(L, x-0.12,0.16,-0.12, x+0.12,EJE_Y-0.12, 0.12, "#C7CDC9", 8);
+    // 2 rodamientos sellados
+    cilX(L, x-0.14, x+0.14, EJE_Y, 0, 0.24, 18, "#8E9692", 2);
+    cilX(L, x-0.15, x+0.15, EJE_Y, 0, 0.11, 12, "#3E4542", 2);
+  }
+  // soporte del estator del generador
+  caja(L, GEN_X-0.12,0.12,-0.25, GEN_X+0.12,EJE_Y-0.6,0.25, "#C7CDC9", 8);
+  // electrónica sobre la mesa
+  sombra(L, 1.45,-0.55, 2.4,0.6);
+  caja(L, 1.5,0,-0.5, 2.3,0.06,0.5, "#2E6B4C", 4);                       // 4 rectificador
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++)
+    caja(L, 1.6+c*0.24,0.06,-0.32+r*0.4, 1.76+c*0.24,0.16,-0.16+r*0.4, "#1D2220", 4);
+  caja(L, 1.6,0.06,0.3, 2.2,0.22,0.42, "#9AA3A0", 4);                    // disipador
+  sombra(L, 2.6,-0.5, 3.4,0.5, 0.13);
+  cilY(L, 3.0,0, 0.36, 0, 1.05, 22, "#2B4B8C", 5);                       // 5 supercondensador
+  cilY(L, 3.0,0, 0.33, 1.05, 1.08, 22, "#C5CBD2", 5);
+  cilY(L, 2.9,0.1, 0.03, 1.08, 1.25, 6, "#BFC4C1", 5);
+  cilY(L, 3.1,-0.1, 0.03, 1.08, 1.25, 6, "#BFC4C1", 5);
+  sombra(L, 3.5,-0.5, 4.5,0.55);
+  caja(L, 3.6,0,-0.45, 4.4,0.06,0.45, "#2E6B4C", 6);                     // 6 cargador MPPT
+  caja(L, 3.75,0.06,-0.15, 3.98,0.12,0.1, "#1D2220", 6);
+  caja(L, 4.05,0.06,-0.32, 4.3,0.2,-0.08, "#6E7472", 6);
+  cilY(L, 4.15,0.25, 0.08, 0.06, 0.2, 10, "#3E7FC4", 6);                 // potenciómetro
+  sombra(L, 4.6,-0.85, 5.9,0.85, 0.14);
+  caja(L, 4.7,0,-0.75, 5.8,0.12,0.75, "#262A28", 7);                     // 7 batería: soporte
+  const env = ["#3F7FC4", "#7B4FA0", "#2F8F5F"];
+  for (let c = 0; c < 3; c++){
+    const z = -0.46 + c*0.46;
+    cilY(L, 5.25,z, 0.21, 0.12, 1.55, 16, env[c], 7);
+    cilY(L, 5.25,z, 0.12, 1.55, 1.6, 10, "#D7DBD8", 7);
+  }
+  for (const y of [0.45, 1.15]) caja(L, 4.98,y,-0.74, 5.52,y+0.14,0.74, "#1B1E1D", 7); // cintas
+  caja(L, 4.75,0.12,0.78, 5.6,0.17,0.9, "#2E6B4C", 7);                  // placa de protección
+  // cables
+  const r = rutas();
+  r.fases.forEach((p, k) => linea(L, p, FASES[k], 2.2));
+  for (const s of r.dc){
+    linea(L, s.map(p => [p[0],p[1],p[2]+0.08]), "#C0392B", 2.6);
+    linea(L, s.map(p => [p[0],p[1],p[2]-0.08]), "#222", 2.6);
+  }
+  ESTATICO = L;
+}
+// punto de una pala curva de PVC: s = radio relativo, u = ancho relativo
+function ptoPala(a, s, u){
+  const r = 0.28 + s*(R_PALA - 0.28);
+  const c = 0.85 - 0.35*s;                       // cuerda
+  const beta = 0.42 - 0.18*s;                     // ángulo de calado
+  const rad = [0, Math.cos(a), Math.sin(a)], tan = [0, -Math.sin(a), Math.cos(a)];
+  const w = (u - 0.35) * c, curva = 0.1*Math.sin(Math.PI*u);  // curva del tubo
+  return [ROTOR_X + Math.sin(beta)*w - curva, EJE_Y + r*rad[1] + tan[1]*Math.cos(beta)*w, r*rad[2] + tan[2]*Math.cos(beta)*w];
+}
+function construirDinamico(){
+  const L = [], th = S.theta;
+  // 2 eje
+  cilX(L, ROTOR_X-0.1, GEN_X+0.45, EJE_Y, 0, 0.06, 10, "#9AA2A6", 2, 1, false);
+  // 1 rotor: buje y tres palas
+  cilX(L, ROTOR_X-0.12, ROTOR_X+0.14, EJE_Y, 0, 0.3, 16, "#D8DDD9", 1);
+  cilX(L, ROTOR_X-0.2, ROTOR_X-0.12, EJE_Y, 0, 0.12, 12, "#9AA2A6", 1);
+  for (let k = 0; k < 3; k++){
+    const a = th + k*2*Math.PI/3, N = 9, M = 3;
+    for (let i = 0; i < N; i++) for (let j = 0; j < M; j++)
+      cara(L, [ptoPala(a,i/N,j/M), ptoPala(a,(i+1)/N,j/M), ptoPala(a,(i+1)/N,(j+1)/M), ptoPala(a,i/N,(j+1)/M)],
+        "#7CC48E", 1, 1, { alfa:0.95 });
+  }
+  // 3 generador: dos discos de freno con imanes + disco de bobinas
+  cilX(L, GEN_X-0.32, GEN_X-0.24, EJE_Y, 0, 0.62, 24, "#7B5D4C", 3);
+  cilX(L, GEN_X-0.2, GEN_X+0.2, EJE_Y, 0, 0.58, 24, "#C9A55A", 3);
+  cilX(L, GEN_X+0.24, GEN_X+0.32, EJE_Y, 0, 0.62, 24, "#7B5D4C", 3);
+  for (let k = 0; k < 8; k++){                    // imanes que giran
+    const a = th + k*Math.PI/4, y = EJE_Y + 0.45*Math.cos(a), z = 0.45*Math.sin(a);
+    for (const x of [GEN_X-0.34, GEN_X+0.32])
+      caja(L, x,y-0.07,z-0.07, x+0.03,y+0.07,z+0.07, k % 2 ? "#D7DCE0" : "#5C6670", 3);
+  }
+  // viento y pulsos de energía (solo con animación)
+  if (S.anim){
+    for (let i = 0; i < 26; i++){
+      const fa = (i*0.618034) % 1, ang = i*2.39996, rr = 0.3 + 2.0*Math.sqrt(fa);
+      const y = EJE_Y + rr*Math.cos(ang), z = rr*Math.sin(ang);
+      if (y < 0.3) continue;
+      const ph = (S.reloj*0.35 + (i*0.381966) % 1) % 1, x = -7 + ph*6.5, al = Math.sin(Math.PI*ph)*0.8;
+      linea(L, [[x-0.9,y,z],[x-0.45,y+0.04*Math.sin(x*2+i),z],[x,y,z]], `rgba(40,150,120,${al.toFixed(2)})`, 2, 3);
+    }
+    const r = rutas(), sobre = (p, u) => {
+      const t = u*(p.length-1), i = Math.min(Math.floor(t), p.length-2), f = t - i;
+      return p[i].map((v, q) => v + (p[i+1][q] - v)*f);
+    };
+    r.fases.forEach((p, k) => { for (let i = 0; i < 4; i++) L.push({ brillo:true, p: sobre(p, (S.reloj*0.5 + i/4 + k*0.05) % 1), color:FASES[k], capa:3 }); });
+    r.dc.forEach(p => { for (let i = 0; i < 2; i++) L.push({ brillo:true, p: sobre(p, (S.reloj*0.8 + i/2) % 1), color:"#F2B53A", capa:3 }); });
+  }
+  return L;
+}
+// dónde va cada número (punto 3D y desplazamiento en pantalla)
+const ETIQ = {
+  1:{ p:[ROTOR_X, EJE_Y+1.3, 0.2], o:[0,-10] },
+  2:{ p:[-2.1, EJE_Y+0.25, 0], o:[0,-26] },
+  3:{ p:[GEN_X, EJE_Y+0.62, 0], o:[0,-24] },
+  4:{ p:[1.9, 0.2, 0], o:[0,-28] },
+  5:{ p:[3.0, 1.12, 0], o:[0,-24] },
+  6:{ p:[4.0, 0.22, 0], o:[0,-28] },
+  7:{ p:[5.25, 1.62, 0], o:[0,-24] },
+  8:{ p:[-1.5, 0.13, 0.9], o:[0,22] }
+};
+
+/* =====================================================================
+   5. DIBUJO
+   ===================================================================== */
+let dibujadas = [], etiquetas = [], hoverId = 0;
+function sombrear(f, ojo){
+  let n = norm(cruz(resta(f.pts[1], f.pts[0]), resta(f.pts[2], f.pts[0])));
+  const c = f.pts.reduce((a, p) => [a[0]+p[0]/f.pts.length, a[1]+p[1]/f.pts.length, a[2]+p[2]/f.pts.length], [0,0,0]);
+  if (punto(n, resta(ojo, c)) < 0) n = n.map(v => -v);   // caras de doble lado
+  const k = 0.62 + 0.38*Math.max(0, punto(n, LUZ));
+  let col = f.col.map(v => v*k);
+  if (S.sel && f.id === S.sel) col = col.map((v, i) => v*0.7 + [70,190,120][i]*0.3);
+  else if (hoverId && f.id === hoverId) col = col.map(v => v*0.9 + 25);
+  return `rgba(${col.map(v => Math.round(lim(v,0,255))).join(",")},${f.alfa ?? 1})`;
+}
+function dibujar(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  const ojo = camPos(), lista = ESTATICO.concat(construirDinamico());
+  const items = lista.map(f => {
+    if (f.brillo){ const q = proyectar(f.p); return { f, q:[q], prof:q[2], capa:f.capa }; }
+    const q = f.pts.map(proyectar);
+    return { f, q, prof: q.reduce((s, p) => s + p[2], 0)/q.length, capa:f.capa };
+  }).filter(it => it.q.every(p => p[2] > 0.3));
+  items.sort((a, b) => (a.capa === 0 || b.capa === 0 || a.capa === 3 || b.capa === 3) && a.capa !== b.capa ? a.capa - b.capa : b.prof - a.prof);
+  dibujadas = [];
+  for (const it of items){
+    const f = it.f;
+    if (f.brillo){
+      const [x, y] = it.q[0];
+      ctx.save(); ctx.shadowColor = f.color; ctx.shadowBlur = 10;
+      ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(x, y, 3.6, 0, Math.PI*2); ctx.fill(); ctx.restore();
+      continue;
+    }
+    ctx.beginPath();
+    it.q.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    if (f.linea){ ctx.strokeStyle = f.color; ctx.lineWidth = f.w; ctx.lineJoin = "round"; ctx.stroke(); continue; }
+    ctx.closePath();
+    ctx.fillStyle = f.plano ? `rgba(30,40,30,${f.alfa})` : sombrear(f, ojo);
+    ctx.fill();
+    if (!f.plano){ ctx.strokeStyle = f.borde || ctx.fillStyle; ctx.lineWidth = f.borde ? 0.8 : 0.6; ctx.stroke(); }
+    if (f.id) dibujadas.push({ id:f.id, q:it.q });
+  }
+  // números de piezas
+  etiquetas = [];
+  if (S.labels){
+    for (let id = 1; id <= 8; id++){
+      const e = ETIQ[id], q = proyectar(e.p);
+      if (q[2] <= 0.3) continue;
+      const x = q[0] + e.o[0], y = q[1] + e.o[1], act = S.sel === id;
+      ctx.strokeStyle = "rgba(29,42,35,.35)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(x, y); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, act ? 12 : 10, 0, Math.PI*2);
+      ctx.fillStyle = act ? "#24543D" : "#fff"; ctx.fill();
+      ctx.strokeStyle = act ? "#fff" : "rgba(29,42,35,.25)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = act ? "#fff" : "#1D2A23";
+      ctx.font = `700 ${act ? 12 : 11}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(id, x, y + 0.5);
+      etiquetas.push({ id, x, y });
+    }
+  }
+}
+function dentro(x, y, q){
+  let s = false;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++)
+    if ((q[i][1] > y) !== (q[j][1] > y) && x < (q[j][0]-q[i][0])*(y-q[i][1])/(q[j][1]-q[i][1]) + q[i][0]) s = !s;
+  return s;
+}
+function piezaEn(x, y){
+  for (const e of etiquetas) if (Math.hypot(e.x - x, e.y - y) < 13) return e.id;
+  for (let i = dibujadas.length - 1; i >= 0; i--) if (dentro(x, y, dibujadas[i].q)) return dibujadas[i].id;
+  return 0;
+}
+function redimensionar(){
+  const r = cv.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  F = Math.min(W, H*1.6) * 0.95;
+}
+
+/* =====================================================================
+   6. INTERACCIÓN
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+function construirLista(){
+  $("lista").innerHTML = PIEZAS.slice(1).map((p, i) =>
+    `<li><button type="button" data-id="${i+1}" aria-pressed="false"><span class="n">${String(i+1).padStart(2,"0")}</span>${p.nombre}${p.rec ? '<span class="rec" title="Material reciclado"></span>' : ""}</button></li>`).join("");
+  $("lista").addEventListener("click", e => { const b = e.target.closest("button"); if (b) seleccionar(+b.dataset.id); });
+}
+function seleccionar(id){
+  S.sel = id;
+  document.querySelectorAll("#lista button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.id === id)));
+  const p = PIEZAS[id];
+  $("ficha").innerHTML = !p ? '<p>Toca una pieza del modelo o de la lista.</p>' : `
+    <p class="kicker">${String(id).padStart(2,"0")} / COMPONENTE</p>
+    <h3>${p.nombre}</h3>
+    <p><span class="chip ${p.tipo}">${TIPO[p.tipo]}</span><span class="chip ${p.rec ? "rec" : "nuevo"}">${p.rec ? "Reciclado" : "Pieza nueva"}</span></p>
+    <p>${p.corto}</p>
+    <dl><dt>Recibe</dt><dd>${p.recibe}</dd><dt>Entrega</dt><dd>${p.entrega}</dd><dt>De dónde sale</dt><dd>${p.material}</dd></dl>`;
+}
+function irVista(nombre){
+  anim = { desde:{ yaw:cam.yaw, pitch:cam.pitch, dist:cam.dist }, hacia:VISTAS[nombre], t:0 };
+  // tomar el giro más corto
+  let d = anim.hacia.yaw - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+  anim.hacia = Object.assign({}, anim.hacia, { yaw: cam.yaw + d });
+  document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.view === nombre)));
+}
+function vistaLibre(){ anim = null; document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", "false")); }
+function zoom(f){ cam.dist = lim(cam.dist*f, 6, 34); }
+function ponerAnim(on){
+  S.anim = on;
+  for (const b of [$("btnAnim"), $("btnAnimTop")]) b.setAttribute("aria-pressed", String(on));
+  $("btnAnim").textContent = on ? "❚❚ Pausar rotor" : "▷ Animar rotor";
+  $("estado").textContent = on
+    ? "El viento empuja las palas → el eje gira el generador → tres fases (naranja, verde, azul) → rectificador → corriente continua (amarillo) hasta la batería."
+    : "Animación detenida. Pulsa «Animar rotor» para ver el viento, el giro y la energía.";
+}
+document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => irVista(b.dataset.view)));
+$("btnReset").addEventListener("click", () => { Object.assign(cam, OBJ); irVista("persp"); S.spin = false; $("btnSpin").setAttribute("aria-pressed","false"); seleccionar(1); });
+$("btnSpin").addEventListener("click", () => { S.spin = !S.spin; $("btnSpin").setAttribute("aria-pressed", String(S.spin)); if (S.spin) vistaLibre(); });
+$("btnAnim").addEventListener("click", () => ponerAnim(!S.anim));
+$("btnAnimTop").addEventListener("click", () => ponerAnim(!S.anim));
+$("chkLabels").addEventListener("change", e => { S.labels = e.target.checked; });
+$("btnIn").addEventListener("click", () => zoom(0.85));
+$("btnOut").addEventListener("click", () => zoom(1.18));
+cv.addEventListener("wheel", e => { e.preventDefault(); zoom(e.deltaY > 0 ? 1.08 : 0.92); }, { passive:false });
+cv.addEventListener("keydown", e => {
+  const k = { ArrowLeft:[-0.1,0], ArrowRight:[0.1,0], ArrowUp:[0,0.06], ArrowDown:[0,-0.06] }[e.key];
+  if (k){ vistaLibre(); cam.yaw += k[0]; cam.pitch = lim(cam.pitch + k[1], -0.1, 1.5); e.preventDefault(); }
+  if (e.key === "+") zoom(0.9); if (e.key === "-") zoom(1.1);
+});
+// arrastrar (un dedo o ratón) y pellizcar (dos dedos)
+const punteros = new Map(); let movido = 0, pellizco = 0;
+cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); punteros.set(e.pointerId, [e.clientX, e.clientY]); movido = 0; cv.classList.add("drag"); });
+cv.addEventListener("pointermove", e => {
+  const r = cv.getBoundingClientRect();
+  if (!punteros.has(e.pointerId)){
+    hoverId = piezaEn(e.clientX - r.left, e.clientY - r.top);
+    cv.classList.toggle("hover", !!hoverId); return;
+  }
+  const prev = punteros.get(e.pointerId); punteros.set(e.pointerId, [e.clientX, e.clientY]);
+  if (punteros.size === 2){
+    const [a, b] = [...punteros.values()], d = Math.hypot(a[0]-b[0], a[1]-b[1]);
+    if (pellizco) zoom(pellizco / d); pellizco = d; movido += 10; return;
+  }
+  const dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+  movido += Math.abs(dx) + Math.abs(dy);
+  if (movido > 4){ vistaLibre(); cam.yaw -= dx*0.008; cam.pitch = lim(cam.pitch + dy*0.006, -0.1, 1.5); }
+});
+function soltar(e){
+  if (punteros.has(e.pointerId) && movido <= 4 && punteros.size === 1){
+    const r = cv.getBoundingClientRect(), id = piezaEn(e.clientX - r.left, e.clientY - r.top);
+    if (id) seleccionar(id);
+  }
+  punteros.delete(e.pointerId); if (punteros.size < 2) pellizco = 0;
+  if (!punteros.size) cv.classList.remove("drag");
+}
+cv.addEventListener("pointerup", soltar);
+cv.addEventListener("pointercancel", soltar);
+cv.addEventListener("pointerleave", () => { hoverId = 0; cv.classList.remove("hover"); });
+window.addEventListener("resize", redimensionar);
+
+/* =====================================================================
+   7. BUCLE de animación
+   ===================================================================== */
+let tPrev = null;
+function cuadro(t){
+  const dt = tPrev === null ? 0 : Math.min((t - tPrev)/1000, 0.05); tPrev = t;
+  if (S.anim){ S.theta += dt*2.4; S.reloj += dt; }
+  if (S.spin) cam.yaw += dt*0.35;
+  if (anim){
+    anim.t = Math.min(1, anim.t + dt*2.2);
+    const e = anim.t < 0.5 ? 2*anim.t*anim.t : 1 - Math.pow(-2*anim.t + 2, 2)/2;
+    for (const k of ["yaw","pitch","dist"]) cam[k] = anim.desde[k] + (anim.hacia[k] - anim.desde[k])*e;
+    if (anim.t >= 1) anim = null;
+  }
+  dibujar();
+  requestAnimationFrame(cuadro);
+}
+
+construirEstatico();
+construirLista();
+seleccionar(1);
+redimensionar();
+requestAnimationFrame(cuadro);
+</script>
+</body>
+</html>
